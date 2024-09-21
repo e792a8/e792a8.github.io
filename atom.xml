@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="zh">
+    <title>empty</title>
+    <link rel="self" type="application/atom+xml" href="https://e792a8.github.io/atom.xml"/>
+    <link rel="alternate" type="text/html" href="https://e792a8.github.io"/>
+    <generator uri="https://www.getzola.org/">Zola</generator>
+    <updated>2024-09-17T00:00:00+00:00</updated>
+    <id>https://e792a8.github.io/atom.xml</id>
+    <entry xml:lang="zh">
+        <title>Linux Subsystem for Windows</title>
+        <published>2024-09-17T00:00:00+00:00</published>
+        <updated>2024-09-17T00:00:00+00:00</updated>
+        
+        <author>
+          <name>
+            
+              Unknown
+            
+          </name>
+        </author>
+        
+        <link rel="alternate" type="text/html" href="https://e792a8.github.io/posts/2024/09/68bc3acc/"/>
+        <id>https://e792a8.github.io/posts/2024/09/68bc3acc/</id>
+        
+        <content type="html" xml:base="https://e792a8.github.io/posts/2024/09/68bc3acc/">&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;场景：你受够了m$，决定投奔linux阵营。&lt;&#x2F;p&gt;
+&lt;p&gt;但是C盘的陈年老$hit还舍不得扔，所以你选择了双。&lt;&#x2F;p&gt;
+&lt;p&gt;且预算不支持你单独搞块SSD，所以你让linux和$hit挤在一块盘的两个分区里。&lt;&#x2F;p&gt;
+&lt;p&gt;你又觉得重启切系统很麻烦，蓝牙键鼠和WiFi还会掉，所以你决定给WSL来个倒反天罡。 &lt;!-- more --&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;你开始思考要怎么把物理盘上的$hit搞到虚拟机里，直接把整个物理盘挂上去似乎不太安全。&lt;&#x2F;p&gt;
+&lt;p&gt;你决定只把$hit的分区搞进去，但麻烦的是这玩意只是个裸分区，没法引导。&lt;&#x2F;p&gt;
+&lt;p&gt;所以还是得有个完整的盘，带分区表和efi分区的，要带上物理盘的一个分区，还不能影响物理盘的其他地方。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;准备：虚拟机，理论上啥都行，我用的是virt-manager和qemu&#x2F;kvm。&lt;&#x2F;p&gt;
+&lt;p&gt;Windows安装盘，有个iso镜像就行，我们只需要用这玩意修引导，如果你嫌大并且有别的修引导工具比如PE的话应该也行。&lt;&#x2F;p&gt;
+&lt;p&gt;修分区工具testdisk，最好备一个手动分区工具，我喜欢fdisk。&lt;&#x2F;p&gt;
+&lt;p&gt;确认dmsetup，losetup正常。&lt;&#x2F;p&gt;
+&lt;p&gt;确认Windows能用长密码登陆，进虚拟机PIN之类的用不了。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;我的工作目录是&lt;code&gt;&#x2F;var&#x2F;lib&#x2F;private&lt;&#x2F;code&gt;，查资料确认有没有别的用途，没查到，看名字应该是咱能自己随便用的意思。&lt;&#x2F;p&gt;
+&lt;p&gt;我的$hit分区是&lt;code&gt;&#x2F;dev&#x2F;nvme0n1p3&lt;&#x2F;code&gt;或者&lt;code&gt;&#x2F;dev&#x2F;disk&#x2F;by-uuid&#x2F;122831BB28319EA3&lt;&#x2F;code&gt;。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;搞个windisk-begin.img，等下用来粘在前面，256MiB应该够了。&lt;&#x2F;p&gt;
+&lt;p&gt;再搞个windisk-end.img，等下用来粘在后面，64MiB应该远远够了，不确定是否必要，但是fdisk好像喜欢在盘末尾留一点空间。&lt;&#x2F;p&gt;
+&lt;p&gt;dd两下很快。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;因为diskmapper只支持粘块设备，不支持粘文件，所以把上面两个文件搞成loop设备。&lt;&#x2F;p&gt;
+&lt;p&gt;先搞两个inode。major我看别的loop都是7。minor我寻思尽量大点好吧。&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;mknod &#x2F;dev&#x2F;loop-windisk-begin b 7 991
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;mknod &#x2F;dev&#x2F;loop-windisk-end b 7 992
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;然后把两个文件搞上去。&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;losetup loop-windisk-begin &#x2F;var&#x2F;lib&#x2F;private&#x2F;windisk-begin.img
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;losetup loop-windisk-end &#x2F;var&#x2F;lib&#x2F;private&#x2F;windisk-end.img
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;几个设备的扇区数得算一下，可以lsblk --bytes，然后除以512就是了。&lt;&#x2F;p&gt;
+&lt;p&gt;比如我的$hit是787879936个扇区，loop-windisk-begin是256MiB所以是524288，loop-windisk-end是64MiB所以是131072。&lt;&#x2F;p&gt;
+&lt;p&gt;等下要把这三个按顺序粘一块，放的位置也得算一下。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;写个windisk.dm，格式参考dmsetup(8)的TABLE FORMAT节。我写的长这样：&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;0 524288 linear &#x2F;dev&#x2F;loop-windisk-begin 0
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;524288 787879936 linear &#x2F;dev&#x2F;disk&#x2F;by-uuid&#x2F;122831BB28319EA3 0
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;788404224 131072 linear &#x2F;dev&#x2F;loop-windisk-end 0
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;然后就可以粘了。&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;dmsetup create windisk &#x2F;var&#x2F;lib&#x2F;private&#x2F;windisk.dm
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;然后应该就有了个&lt;code&gt;&#x2F;dev&#x2F;mapper&#x2F;windisk&lt;&#x2F;code&gt;。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;修分区表。一般testdisk能找出来，跟着提示操作，确认一下找出来的位置长度对不对就行了。&lt;&#x2F;p&gt;
+&lt;p&gt;喜欢挑战或者testdisk没找出来，就手动搞吧，反正上面那些数字你都有了。&lt;&#x2F;p&gt;
+&lt;p&gt;efi分区不用自己建，等下修引导的时候自动搞。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;修引导。&lt;&#x2F;p&gt;
+&lt;p&gt;我本来因为不想搞安装盘，寻思直接把物理盘的efi分区拷进去，但是windows boot manager导不起来。我估计是BCD不对，但是也没找到能在linux里改BCD的工具。我想用grub，但是网上的资料全都是chainload windows boot manager，没找到什么可以直接引导windows内核的办法。我记得我物理盘里还留着个恢复分区，一顿dm+fdisk，无果。我想找个PE但是好像都得在Windows上装，这时候正上课呢还没网。然后发现坐我旁边的舍友随身带着个安装盘。&lt;&#x2F;p&gt;
+&lt;p&gt;把&lt;code&gt;&#x2F;dev&#x2F;mapper&#x2F;windisk&lt;&#x2F;code&gt;和安装盘挂虚拟机里，从安装盘启动，看到“修复计算机”的时候点进去。它应该是不会修的，但是我们只需要找疑难解答然后找命令提示符。我记得Shift+F10还是啥可以直接开的来着？
+先确认一下你的$hit分区是哪个盘，我的成了D盘。然后只要：&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;bcdboot D:\Windows
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;就好了。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;拔安装盘，重启，如果引导正常，应该会开始正在准备设备，等几分钟一般就好了。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;上面5-8那些操作我写到了个脚本里，我觉得应该能有udev之类的更优雅的搞法，但是先不管了。&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        
+    </entry>
+</feed>

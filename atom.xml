@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="zh-CN">
+    <title>empty</title>
+    <link rel="self" type="application/atom+xml" href="https://e792a8.github.io/atom.xml"/>
+    <link rel="alternate" type="text/html" href="https://e792a8.github.io"/>
+    <generator uri="https://www.getzola.org/">Zola</generator>
+    <updated>2026-10-05T00:00:00+00:00</updated>
+    <id>https://e792a8.github.io/atom.xml</id>
+    <entry xml:lang="zh-CN">
+        <title>处置一起挖矿病毒入侵</title>
+        <published>2026-10-05T00:00:00+00:00</published>
+        <updated>2026-10-05T00:00:00+00:00</updated>
+        
+        <author>
+          <name>Unknown</name>
+        </author>
+        
+        <link rel="alternate" type="text/html" href="https://e792a8.github.io/posts/2026/10/a7d636ec/"/>
+        <id>https://e792a8.github.io/posts/2026/10/a7d636ec/</id>
+        
+        <content type="html" xml:base="https://e792a8.github.io/posts/2026/10/a7d636ec/">&lt;p&gt;平时跑实验喜欢用btop看负载，从前几天开始发现btop经常是这么个画风：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://e792a8.github.io/posts/2026/10/a7d636ec/image.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;注意到什么了？CPU负载100%，但是进程列表里什么异常都没有。&lt;/p&gt;
+&lt;p&gt;第一反应：btop出bug了，CPU指示器是假的？&lt;/p&gt;
+&lt;p&gt;第二反应：服务器上另外有人在整虚拟机或容器相关的活，btop看不到？&lt;/p&gt;
+&lt;p&gt;第三反应：服务器中挖矿病毒了，病毒把自己隐藏了！&lt;/p&gt;
+&lt;p&gt;不敢猜，怕真查出来是挖矿，然后还得我来处理。&lt;/p&gt;
+&lt;p&gt;于是就屏蔽着挖矿猜想凑合过了两三天。这期间每看一眼btop都感觉不对劲，如果是有人在跑实验，这好像也太久了，如果是btop的bug，我有什么别的手段查负载呢？在&lt;code&gt;/proc&lt;/code&gt;之类的哪里找？&lt;/p&gt;
+&lt;p&gt;但是偶然注意到进程列表里一个诡异的项目闪过，只有PID=443656，后面的项目全是空白。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo ls -A /proc/443656&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;CodeStore-1blc03e7aa518398  ins.sh.1878467  libpod_lock  libpod_rootless_lock_1001&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;看到这里我还在想，是什么进程把&lt;code&gt;/proc/PID&lt;/code&gt;​里的东西都干没了，还当成tmpfs在用？ins.sh是什么安装脚本？但是怎么是空文件？这个libpod看着像是什么容器的什么锁文件，1001看着好像UID，我们的UID=1001是谁？好像是在研究容器啥的同学，CodeStore是vscode的什么临时文件？他确实有在用vscode。所以这是他在跑什么诡异容器，但是这个诡异容器把&lt;code&gt;/proc/PID&lt;/code&gt;里的东西都干没了，还当成tmpfs在用？&lt;/p&gt;
+&lt;p&gt;还是再看看&lt;code&gt;journalctl&lt;/code&gt;怎么说。&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://e792a8.github.io/posts/2026/10/a7d636ec/image-20261005133409-3yy4ows.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;首先注意到了这个诡异的名字“tmuxinfoX”。再结合上面那些文件名，这我再不敢猜都不得不意识到了，恶意程序很常见的名字伪装手段。&lt;/p&gt;
+&lt;p&gt;其次看到“umount /proc/443656”，看来&lt;code&gt;/proc/PID&lt;/code&gt;和mount有关？&lt;/p&gt;
+&lt;p&gt;接着看到“journalctl --vacuum-time=1s”。抹除日志，妥妥的恶意行为了。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ mountpoint /proc/443656&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/proc/443656 is a mountpoint&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ mount | grep 443656&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;tmpfs on /proc/443656 type tmpfs (rw,nosuid,nodev,inode64)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;我说这还挺天才的吧，挂载个tmpfs就给自己隐藏了。&lt;/p&gt;
+&lt;p&gt;所以直接umount吗？不太敢直接碰&lt;code&gt;/proc&lt;/code&gt;里的东西，怕打草惊蛇又让它用什么别的手段藏起来。有什么办法看到挂载点下的内容？一时不知道。&lt;/p&gt;
+&lt;p&gt;也许可以做个kmod进内核态探查一番，这应该就是内核态对抗吧，感觉是一些反病毒软件才会整的活，也许之后有必要研究一下。&lt;/p&gt;
+&lt;p&gt;换个思路，&lt;code&gt;/proc&lt;/code&gt;​实际上是挂载了一个类型为&lt;code&gt;proc&lt;/code&gt;的文件系统。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ mount | grep proc&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;所以只要换地方再挂一个&lt;code&gt;proc&lt;/code&gt;就行？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ mkdir ./proc&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo mount -t proc proc ./proc&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo ls ./proc/443656/&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;arch_status         cpuset             latency     ns             sched         syscall&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;attr                cwd                limits      numa_maps      schedstat     task&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;autogroup           environ            loginuid    oom_adj        sessionid     timens_offsets&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;auxv                exe                map_files   oom_score      setgroups     timers&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;cgroup              fd                 maps        oom_score_adj  smaps         timerslack_ns&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;clear_refs          fdinfo             mem         pagemap        smaps_rollup  uid_map&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;cmdline             gid_map            mountinfo   patch_state    stack         wchan&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;comm                io                 mounts      personality    stat&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;coredump_filter     ksm_merging_pages  mountstats  projid_map     statm&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;cpu_resctrl_groups  ksm_stat           net         root           status&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ cd ./proc/443656&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;接下来就好办了。要提取可执行文件样本，只要找&lt;code&gt;/proc/PID/exe&lt;/code&gt;​。这是一个符号链接，但是作为一个合格的恶意程序怎么会忘记删除自己呢，所以&lt;code&gt;readlink&lt;/code&gt;​指向的路径会是已删除的文件。但是没关系，直接&lt;code&gt;cat&lt;/code&gt;是能读出来的。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo cat exe &amp;gt; ../../proc-443656&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;再用scp提取到我电脑上，您猜怎么着，直接被火绒给没收了。&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;image-20261005144607-x2aj2vn.png&quot; style=&quot;width: 28em;&quot;&gt;&lt;/img&gt;&lt;/p&gt;
+&lt;p&gt;这下看来是挖矿病毒没跑了。根据以往经验，挖矿病毒多半是通过弱密码爆破侵入进来。我们有四台服务器，两台旧的早期由一位经验丰富的管理员维护，大概都是强密码；我现在所用的服务器属于新的一批，这两台用户多，管理员比较缺乏经验，且我明确知道其上存在或存在过弱密码。我全部查了一遍，果然，另一台新的也中招了同款病毒，两台旧的都没有受影响。&lt;/p&gt;
+&lt;p&gt;查阅日志，发现确实有一个地址在持续进行ssh登录尝试，可能是网络内其他被感染的设备。由于早期日志被抹除，只发现该地址在一台服务器上成功登录，被登录的用户具有sudo权限，且其&lt;code&gt;.bash_history&lt;/code&gt;被清空。&lt;/p&gt;
+&lt;p&gt;没有什么别的线索了，回去追查一下那个“tmuxinfoX.service”。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo cat /usr/lib/systemd/system/tmuxinfo3035aa41.service&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;[Unit]&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Description=Server Service&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Wants=network-online.target&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;After=network-online.target&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;[Service]&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Type=simple&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;User=root&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;TimeoutStartSec=1200&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;ExecStart=/usr/bin/tmuxinfo3035aa41c1e9163b tmuxinfo3035aa41 10.200.41.28&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Restart=always&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;RestartSec=4h&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;KillMode=process&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;[Install]&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;WantedBy=multi-user.target&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;把指向的这个程序提取下来，同样是被火绒光速没收。&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;image-20261005153227-y6v979r.png&quot; style=&quot;width: 28em;&quot;&gt;&lt;/img&gt;&lt;/p&gt;
+&lt;p&gt;另外还想追查一下有没有别的tmuxinfoX了。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo ls /usr/lib/systemd/system/ | grep tmux&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;没有输出？不是，我还没删啊？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo cat /usr/lib/systemd/system/tmuxinfo3035aa41.service&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;[Unit]&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Description=Server Service&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Wants=network-online.target&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;After=network-online.target&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;[Service]&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Type=simple&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;User=root&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;TimeoutStartSec=1200&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;ExecStart=/usr/bin/tmuxinfo3035aa41c1e9163b tmuxinfo3035aa41 10.200.41.28&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Restart=always&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;RestartSec=4h&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;KillMode=process&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;[Install]&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;WantedBy=multi-user.target&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo ls /usr/lib/systemd/system/ | grep tmux&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo ls /usr/lib/systemd/system/&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;......&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;我以为我真该睡了，但是仔细看了好几遍，&lt;code&gt;cat&lt;/code&gt;明明能正常读，&lt;code&gt;ls&lt;/code&gt;的输出就是没有“tmuxinfoX.service”。这也太诡异了。&lt;/p&gt;
+&lt;p&gt;我以前处置过的挖矿病毒，有的会植入kmod​隐藏自己的&lt;code&gt;/proc&lt;/code&gt;，还是在dmesg里留了有kmod安装信息才查出来（关键词“yayaya”）。也许这次也用了类似手段隐藏了一些东西，但是我dmesg和kernel-chktaint查下来没发现什么异常。一边在想还有什么手段可以探查内核态，一边下意识怀疑&lt;code&gt;ls&lt;/code&gt;有问题。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ which ls&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/ls&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ ls --version&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;ls (GNU coreutils) 9.4&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Copyright (C) 2023 Free Software Foundation, Inc.&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;License GPLv3+: GNU GPL version 3 or later &amp;lt;https://gnu.org/licenses/gpl.html&amp;gt;.&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;This is free software: you are free to change and redistribute it.&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;There is NO WARRANTY, to the extent permitted by law.&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Written by Richard M. Stallman and David MacKenzie.&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ file `which ls`&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/ls: ELF 64-bit LSB executable, x86-64, version 1 (GNU/Linux), statically linked, BuildID[sha1]=33f8cb6f7e9e18164592291fdcf86f58b0a9d4fe, for GNU/Linux 3.2.0, stripped&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ file `which cat`&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/cat: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=9de7eeef378bdfd62a7e79c05c5381d560b57f15, for GNU/Linux 3.2.0, stripped&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ file `which passwd`&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/passwd: setuid ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=2344480b478a675609210ed886207d6cbdc8cdd7, for GNU/Linux 3.2.0, stripped&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;注意到什么了？正常发行版安装的二进制程序应该基本都是“dynamically linked”吧，这个&lt;code&gt;ls&lt;/code&gt;怎么是“statically linked”？&lt;/p&gt;
+&lt;p&gt;所以是&lt;code&gt;ls&lt;/code&gt;被病毒替换了，自动把“tmuxinfoX.service”给隐藏了？那我系统里还剩多少东西是可信的？busybox你在吗？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ busybox ls /usr/lib/systemd/system | grep tmux&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;tmuxinfo3035aa41.service&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ ls /usr/lib/systemd/system | grep tmux&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;幸好busybox看起来还好好的。这个&lt;code&gt;ls&lt;/code&gt;提取下来依然是火绒没收。&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;image-20261005163749-v5ij1zp.png&quot; style=&quot;width: 28em;&quot;&gt;&lt;/img&gt;&lt;/p&gt;
+&lt;p&gt;得亏注意到，要不然还真让它潜伏起来了。既然动了系统文件，那就不能假定只动了一个系统文件，得来个全面扫描。有什么办法检查动了哪些文件吗？有的，debsums可以比对系统里哪些由deb包安装的文件被修改。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo apt install debsums&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo debsums --changed&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;检查排除一些干扰项后剩下这些：&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/ls&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/chattr&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/passwd&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/uptime&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/w&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/usr/bin/systemctl&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;/bin/netstat&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;基本都是被换成了statically linked，但是&lt;code&gt;chattr&lt;/code&gt;最奇怪：&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ cat /usr/bin/chattr&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;echo -e Usage: vmlinux1 [-pRVf] [-+=aAcCdDeijPsStTuF] [-v version] files...&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;此时我还没意识到这是啥意思，感觉像是某些奇妙的alias。&lt;/p&gt;
+&lt;p&gt;要把它们还原也容易，&lt;code&gt;apt reinstall&lt;/code&gt;​就行。要找到它们属于哪个包，&lt;code&gt;dpkg -S&lt;/code&gt;就行。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ dpkg -S /usr/bin/dir /usr/bin/ls /usr/bin/chattr /usr/bin/passwd /usr/bin/uptime /usr/bin/w /usr/bin/systemctl /bin/netstat&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;coreutils: /usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;coreutils: /usr/bin/ls&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;e2fsprogs: /usr/bin/chattr&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;passwd: /usr/bin/passwd&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;procps: /usr/bin/uptime&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;procps: /usr/bin/w&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;systemd: /usr/bin/systemctl&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;net-tools: /bin/netstat&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo apt reinstall coreutils e2fsprogs passwd procps systemd net-tools&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;......&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;dpkg: error processing archive /var/cache/apt/archives/coreutils_9.4-3ubuntu6.3_amd64.deb (--unpack):&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt; unable to make backup link of &amp;#39;./usr/bin/dir&amp;#39; before installing new version: Operation not permitted&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;dpkg-deb: error: paste subprocess was killed by signal (Broken pipe)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;什么情况，还不让重装了？这个“Operation not permitted”是什么？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo rm /usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;rm: cannot remove &amp;#39;/usr/bin/dir&amp;#39;: Operation not permitted&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;删除也不让删？这应该不是权限问题，印象里好像在只读文件系统里操作的时候见过，这里应该不是吧，那还有什么？是不是和什么附加属性有关？什么attr？lsattr？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ lsattr /usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;----ia--------e------- /usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ lsattr /usr/bin/cat&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;--------------e------- /usr/bin/cat&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;比正常的多了ia，查了一下好像确实和禁止写有关，但是也会影响删除吗？要怎么改，chattr？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo chattr -ia /usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;Usage: vmlinux1 [-pRVf] [-+=aAcCdDeijPsStTuF] [-v version] files...&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;这下终于看懂这个chattr是什么意思了。busybox能救吗？&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo busybox chattr -ia /usr/bin/dir&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;chattr: applet not found&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;上网查了一下busybox是有chattr的，Ubuntu（或者应该怪Debian）给的居然没有编译进去，好在网上有预编译的完整版busybox-static。&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ wget https://github.com/EXALAB/Busybox-static/raw/refs/heads/main/busybox_x86&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ chmod a+x busybox_x86&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo ./busybox_x86 chattr -ia /usr/bin/dir /usr/bin/ls /usr/bin/chattr /usr/bin/passwd /usr/bin/uptime /usr/bin/w /usr/bin/systemctl /bin/netstat&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo apt reinstall coreutils e2fsprogs passwd procps systemd net-tools&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;确认一下是否清理干净：&lt;/p&gt;
+&lt;pre class=&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang=&quot;plain&quot;&gt;&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo kill -9 443656&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo rm /usr/bin/tmuxinfo3035aa41c1e9163b&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo rm /usr/lib/systemd/system/tmuxinfo3035aa41.service&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo debsums --changed&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo mount&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ sudo systemctl&lt;/span&gt;&lt;/span&gt;
+&lt;span class=&quot;giallo-l&quot;&gt;&lt;span&gt;$ btop&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;看起来没有别的被改动的文件，负载也下来了，观察一天没有发现新的异常，基本确认处置完成。也许还有别的隐藏手段或其他病毒遗留，待之后见招拆招。&lt;/p&gt;
+&lt;p&gt;部署了fail2ban，那个自动爆破的地址被拦住一次后就消停了。&lt;/p&gt;
+&lt;p&gt;最后记得公告提醒所有人注意网络安全，使用强密码。在大家响应前最好给所有用户的密码停用，然后由管理员重新为每个人设置密码。我记得很久以前学过的操作是编辑&lt;code&gt;/etc/shadow&lt;/code&gt;​，在密码哈希字段前加个&lt;code&gt;!&lt;/code&gt;就行。注意不要把自己锁在外面。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;我们有多台服务器遭到挖矿病毒感染，经调查推断为网络内其他感染设备通过弱密码爆破侵入。现已将所有用户的密码停用，如发现自己不能登录，请联系 @管理员 修改密码。&lt;br /&gt;
+提醒各位加强网络安全意识，做好数据备份，务必使用强密码，谨慎运行未知代码，尤其是具有特权的用户。这次幸亏只是挖矿，下次要是来个勒索，实验心血报销，大家就哭吧。&lt;/p&gt;
+&lt;/blockquote&gt;
+</content>
+        
+    </entry>
+    <entry xml:lang="zh-CN">
+        <title>Linux Subsystem for Windows</title>
+        <published>2024-09-17T00:00:00+00:00</published>
+        <updated>2024-09-17T00:00:00+00:00</updated>
+        
+        <author>
+          <name>Unknown</name>
+        </author>
+        
+        <link rel="alternate" type="text/html" href="https://e792a8.github.io/posts/2024/09/68bc3acc/"/>
+        <id>https://e792a8.github.io/posts/2024/09/68bc3acc/</id>
+        
+        <summary type="html">&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;场景：你受够了m$，决定投奔linux阵营。&lt;/p&gt;
+&lt;p&gt;但是C盘的陈年老$hit还舍不得扔，所以你选择了双。&lt;/p&gt;
+&lt;p&gt;且预算不支持你单独搞块SSD，所以你让linux和$hit挤在一块盘的两个分区里。&lt;/p&gt;
+&lt;p&gt;你又觉得重启切系统很麻烦，蓝牙键鼠和WiFi还会掉，所以你决定给WSL来个倒反天罡。&amp;hellip;
+&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+</summary>
+        
+    </entry>
+</feed>
